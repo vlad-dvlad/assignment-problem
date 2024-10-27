@@ -1,6 +1,7 @@
 const express = require('express');
-const axios = require('axios');
 const app = express();
+
+app.use(express.json())
 
 const { solveAssigment } = require('./src/services/assigment')
 const { compute } = require('./src/services/compute')

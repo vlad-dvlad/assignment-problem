@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:alpine
+    ports:
+      - '${REDIS_PORT}:${REDIS_PORT}'
+
+  main-server:
+    build:
+      context: .
+    environment:
+      - PORT=${PORT}
+      - DEFAULT_URL=${DEFAULT_URL}
+      - REDIS_URL=${REDIS_URL}
+    ports:
+      - '${PORT}:${PORT}'
+    depends_on:
+      - redis
+      - worker
+    volumes:
+      - .:/app 
+      - /app/node_modules
+    command: ["nodemon", "src/index.js"] 
+
+  worker:
+    build:
+      context: .
+    environment:
+      - PORT=${WORKER_PORT}
+      - REDIS_URL=${REDIS_URL}
+    ports:
+      - '${WORKER_PORT}:${WORKER_PORT}'
+    depends_on:
+      - redis
