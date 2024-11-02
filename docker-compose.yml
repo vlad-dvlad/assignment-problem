@@ -3,8 +3,10 @@ version: '3.8'
 services:
   redis:
     image: redis:alpine
+    environment:
+      - REDIS_URL=redis://redis:6379
     ports:
-      - '${REDIS_PORT}:${REDIS_PORT}'
+      - "6379:6379"  # Expose Redis port
 
   main-server:
     build:
@@ -12,24 +14,28 @@ services:
     environment:
       - PORT=${PORT}
       - DEFAULT_URL=${DEFAULT_URL}
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=redis://redis:6379
     ports:
-      - '${PORT}:${PORT}'
+      - "${PORT}:${PORT}"
     depends_on:
       - redis
       - worker
     volumes:
       - .:/app 
       - /app/node_modules
-    command: ["nodemon", "src/index.js"] 
+    command: ["nodemon", "src/index.js"]
 
   worker:
     build:
       context: .
     environment:
       - PORT=${WORKER_PORT}
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=redis://redis:6379
     ports:
-      - '${WORKER_PORT}:${WORKER_PORT}'
+      - "${WORKER_PORT}:${WORKER_PORT}"
     depends_on:
       - redis
+    volumes:
+      - .:/app 
+      - /app/node_modules
+    command: ["nodemon", "src/worker.js"]
