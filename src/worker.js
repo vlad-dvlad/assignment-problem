@@ -1,38 +1,50 @@
 const redis = require('redis');
-const { computeHungarian, make_cost_matrix } = require('./hungarian');
+const { promisify } = require('util');
 
-const redisClient = redis.createClient({ url: process.env.REDIS_URL });
-const redisSubscriber = redis.createClient({ url: process.env.REDIS_URL });
+const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+const client = redis.createClient({ url: REDIS_URL });
 
-async function startWorker() {
-  await redisClient.connect();
-  await redisSubscriber.connect();
+client.on('connect', () => {
+  console.log("Worker connected to Redis");
+});
 
-  console.log('Worker connected to Redis');
+client.on('error', (err) => {
+  console.error("Redis connection error in worker:", err);
+});
 
-  // Subscribe to the relevant event channels
-  redisSubscriber.subscribe('start_assignment', async (message) => {
-    console.log(`Received message on channel start_assignment: ${message}`);
-    const matrix = JSON.parse(await redisClient.get('matrix'));
-    await startAssignment(matrix);
-  });
+// Забезпечуємо асинхронні функції
+const getAsync = promisify(client.get).bind(client);
+const keysAsync = promisify(client.keys).bind(client);
+
+// Оновлена функція для обробки задач
+async function processTask() {
+  try {
+    const keys = await keysAsync('task:*');  // Отримуємо всі ключі задач
+    for (const key of keys) {
+      const task = await getAsync(key);  // Отримуємо задачу по ключу
+      console.log("Processing task:", task);
+      // Тут обробка задачі
+    }
+  } catch (err) {
+    console.error("Error processing task:", err);
+  }
 }
 
-// Function to handle the full Hungarian algorithm
-async function startAssignment(matrix) {
-  // Step 1: Convert the matrix to a cost matrix
-  const costMatrix = make_cost_matrix(matrix);
-  await redisClient.set('cost_matrix', JSON.stringify(costMatrix));
-  console.log('Cost matrix prepared');
-
-  // Step 2: Run the Hungarian algorithm
-  const assignments = computeHungarian(costMatrix);
-  await redisClient.set('assignments', JSON.stringify(assignments));
-  console.log('Assignments calculated');
-
-  // Step 3: Publish the completion event
-  redisClient.publish('assignment_complete', 'Assignments complete');
+// Запускаємо інтервал обробки задач, перевіряючи з'єднання
+function startProcessing() {
+  setInterval(() => {
+    if (client.isOpen) {  // Переконайтеся, що з'єднання відкрито перед виконанням
+      processTask();
+    } else {
+      console.warn("Redis client is not open. Attempting to reconnect...");
+      client.connect().catch((err) => console.error("Failed to reconnect:", err));
+    }
+  }, 5000);
 }
 
-// Start the worker and listen for events
-startWorker().catch(console.error);
+// Розпочинаємо обробку задач
+client.connect().then(() => {
+  startProcessing();
+}).catch((err) => {
+  console.error("Failed to connect to Redis on start:", err);
+});

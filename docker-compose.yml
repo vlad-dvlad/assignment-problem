@@ -6,36 +6,31 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379
     ports:
-      - "6379:6379"  # Expose Redis port
+      - "6379:6379"
 
   main-server:
-    build:
-      context: .
+    image: main-server:latest  # Використовуємо локально зібраний образ
     environment:
-      - PORT=${PORT}
-      - DEFAULT_URL=${DEFAULT_URL}
+      - PORT=3000
       - REDIS_URL=redis://redis:6379
     ports:
-      - "${PORT}:${PORT}"
+      - "3000:3000"
     depends_on:
       - redis
-      - worker
-    volumes:
-      - .:/app 
-      - /app/node_modules
-    command: ["nodemon", "src/index.js"]
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    command: ["node", "src/index.js"]
 
   worker:
-    build:
-      context: .
+    image: worker:latest  # Використовуємо локально зібраний образ
     environment:
-      - PORT=${WORKER_PORT}
       - REDIS_URL=redis://redis:6379
-    ports:
-      - "${WORKER_PORT}:${WORKER_PORT}"
     depends_on:
       - redis
-    volumes:
-      - .:/app 
-      - /app/node_modules
-    command: ["nodemon", "src/worker.js"]
+    deploy:
+      replicas: 3
+      restart_policy:
+        condition: on-failure
+    command: ["node", "src/worker.js"]
