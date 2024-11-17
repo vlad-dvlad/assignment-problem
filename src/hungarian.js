@@ -261,45 +261,45 @@ function aggregateResults(submatrixSize, submatrixAssignments, originalMatrix) {
   return { selectedElements, totalCost };
 }
 
-function main(matrix, is_maximization = false) {
-  const matrixSize = matrix.length;
+// function main(matrix, is_maximization = false) {
+//   const matrixSize = matrix.length;
 
-  if (matrixSize <= 20) {
-    // Пряме використання угорського методу без розбиття
-    const cost_matrix = make_cost_matrix(matrix, is_maximization);
-    const assignments = computeHungarian(cost_matrix);
-    const { selectedElements, totalCost } = format_results(matrix, assignments);
-    selectedElements.forEach((element, index) => {
-        console.log(`Agent ${index + 1} -> Cost: ${element}`)
-    })
-    console.log("Total cost for small matrix:", totalCost);
-  } else {
-    // Розбивка на підматриці
-    const submatrixSize = 10;
-    const submatrices = split_into_submatrices(matrix, submatrixSize);
+//   if (matrixSize <= 20) {
+//     // Пряме використання угорського методу без розбиття
+//     const cost_matrix = make_cost_matrix(matrix, is_maximization);
+//     const assignments = computeHungarian(cost_matrix);
+//     const { selectedElements, totalCost } = format_results(matrix, assignments);
+//     selectedElements.forEach((element, index) => {
+//         console.log(`Agent ${index + 1} -> Cost: ${element}`)
+//     })
+//     console.log("Total cost for small matrix:", totalCost);
+//   } else {
+//     // Розбивка на підматриці
+//     const submatrixSize = 10;
+//     const submatrices = split_into_submatrices(matrix, submatrixSize);
 
-    let submatrixAssignments = [];
-    submatrices.forEach((submatrix, index) => {
-      // Обчислюємо початковий рядок і стовпець підматриці в глобальній матриці
-      const offsetRow = Math.floor(index / (matrixSize / submatrixSize)) * submatrixSize;
-      const offsetCol = (index % (matrixSize / submatrixSize)) * submatrixSize;
+//     let submatrixAssignments = [];
+//     submatrices.forEach((submatrix, index) => {
+//       // Обчислюємо початковий рядок і стовпець підматриці в глобальній матриці
+//       const offsetRow = Math.floor(index / (matrixSize / submatrixSize)) * submatrixSize;
+//       const offsetCol = (index % (matrixSize / submatrixSize)) * submatrixSize;
 
-      // Виконуємо угорський метод для підматриці
-      const cost_matrix = make_cost_matrix(submatrix, is_maximization);
-      const assignments = computeHungarian(cost_matrix);
+//       // Виконуємо угорський метод для підматриці
+//       const cost_matrix = make_cost_matrix(submatrix, is_maximization);
+//       const assignments = computeHungarian(cost_matrix);
 
-      // Зберігаємо призначення та їх зсуви
-      submatrixAssignments.push({ assignments, offsetRow, offsetCol });
-    });
+//       // Зберігаємо призначення та їх зсуви
+//       submatrixAssignments.push({ assignments, offsetRow, offsetCol });
+//     });
 
-    // Агрегуємо результати з усіх підматриць
-    const { selectedElements, totalCost } = aggregateResults(submatrixSize, submatrixAssignments, matrix);
-    selectedElements.forEach((element, index) => {
-        console.log(`Agent ${index + 1} -> Cost: ${element}`)
-    })
-    console.log("Total cost for global assignments:", totalCost);
-  }
-}
+//     // Агрегуємо результати з усіх підматриць
+//     const { selectedElements, totalCost } = aggregateResults(submatrixSize, submatrixAssignments, matrix);
+//     selectedElements.forEach((element, index) => {
+//         console.log(`Agent ${index + 1} -> Cost: ${element}`)
+//     })
+//     console.log("Total cost for global assignments:", totalCost);
+//   }
+// }
 
 module.exports = {
   make_cost_matrix,

@@ -9,7 +9,9 @@ services:
       - "6379:6379"
 
   main-server:
-    image: main-server:latest  # Використовуємо локально зібраний образ
+    build:
+      context: .
+      dockerfile: Dockerfile
     environment:
       - PORT=3000
       - REDIS_URL=redis://redis:6379
@@ -21,16 +23,18 @@ services:
       replicas: 1
       restart_policy:
         condition: on-failure
-    command: ["node", "src/index.js"]
+    command: ["nodemon", "src/index.js"]  # Використовуємо nodemon для автоматичного перезавантаження
 
   worker:
-    image: worker:latest  # Використовуємо локально зібраний образ
+    build:
+      context: .
+      dockerfile: Dockerfile
     environment:
       - REDIS_URL=redis://redis:6379
     depends_on:
       - redis
     deploy:
-      replicas: 3
+      replicas: 5  # Репліки воркерів для паралельної обробки
       restart_policy:
         condition: on-failure
-    command: ["node", "src/worker.js"]
+    command: ["nodemon", "src/worker.js"]  # Використовуємо nodemon для автоматичного перезавантаження

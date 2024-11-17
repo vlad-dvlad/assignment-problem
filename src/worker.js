@@ -1,50 +1,35 @@
 const redis = require('redis');
-const { promisify } = require('util');
+const { computeHungarian, make_cost_matrix } = require('./hungarian');
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+const REDIS_URL = process.env.REDIS_URL;
+
 const client = redis.createClient({ url: REDIS_URL });
+client.connect();
 
-client.on('connect', () => {
-  console.log("Worker connected to Redis");
-});
+console.log("Worker connected to Redis");
 
-client.on('error', (err) => {
-  console.error("Redis connection error in worker:", err);
-});
-
-// Забезпечуємо асинхронні функції
-const getAsync = promisify(client.get).bind(client);
-const keysAsync = promisify(client.keys).bind(client);
-
-// Оновлена функція для обробки задач
 async function processTask() {
-  try {
-    const keys = await keysAsync('task:*');  // Отримуємо всі ключі задач
-    for (const key of keys) {
-      const task = await getAsync(key);  // Отримуємо задачу по ключу
-      console.log("Processing task:", task);
-      // Тут обробка задачі
-    }
-  } catch (err) {
-    console.error("Error processing task:", err);
+  while (true) {
+    const task = await client.blPop('tasks', 0);
+    const { taskId, submatrix, offsetRow, offsetCol, is_maximization } = JSON.parse(task[1]);
+
+    // Обробка підзадачі
+    const costMatrix = make_cost_matrix(submatrix, is_maximization);
+    const assignments = computeHungarian(costMatrix);
+
+    // Форматування результату для повернення
+    const formattedResult = assignments.map(([row, col]) => {
+      const value = submatrix[row][col];
+      return { row, col, value };
+    });
+
+    // Відправка результату назад у Redis
+    await client.rPush(`results:${taskId}`, JSON.stringify({
+      assignments: formattedResult,
+      offsetRow,
+      offsetCol
+    }));
   }
 }
 
-// Запускаємо інтервал обробки задач, перевіряючи з'єднання
-function startProcessing() {
-  setInterval(() => {
-    if (client.isOpen) {  // Переконайтеся, що з'єднання відкрито перед виконанням
-      processTask();
-    } else {
-      console.warn("Redis client is not open. Attempting to reconnect...");
-      client.connect().catch((err) => console.error("Failed to reconnect:", err));
-    }
-  }, 5000);
-}
-
-// Розпочинаємо обробку задач
-client.connect().then(() => {
-  startProcessing();
-}).catch((err) => {
-  console.error("Failed to connect to Redis on start:", err);
-});
+processTask().catch(console.error);
