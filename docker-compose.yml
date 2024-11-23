@@ -38,3 +38,5 @@ services:
       restart_policy:
         condition: on-failure
     command: ["nodemon", "src/worker.js"]  # Використовуємо nodemon для автоматичного перезавантаження
+
+    
