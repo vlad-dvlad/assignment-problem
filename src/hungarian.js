@@ -206,17 +206,103 @@ function computeHungarian(cost_matrix) {
   return results;
 }
 
-function make_cost_matrix(profit_matrix) {
-  let maximum = Math.max(...profit_matrix.flat());
-  return profit_matrix.map(row => row.map(x => maximum - x));
+function make_cost_matrix(profit_matrix, is_maximization = false) {
+  let matrix;
+  if (is_maximization) {
+    const maximum = Math.max(...profit_matrix.flat());
+    matrix = profit_matrix.map(row => row.map(x => maximum - x));
+  } else {
+    matrix = profit_matrix; // залишаємо без змін для мінімізації
+  }
+  return matrix;
 }
 
-function format_matrix(matrix) {
-  let columnWidths = matrix[0].map((_, colIndex) => Math.max(...matrix.map(row => String(row[colIndex]).length)));
+function split_into_submatrices(matrix, submatrix_size) {
+  const submatrices = [];
+  const n = matrix.length;
 
-  return matrix
-    .map(row => row.map((val, colIndex) => String(val).padStart(columnWidths[colIndex])).join(" "))
-    .join("\n");
+  for (let i = 0; i < n; i += submatrix_size) {
+    for (let j = 0; j < n; j += submatrix_size) {
+      const submatrix = [];
+      for (let k = 0; k < submatrix_size; k++) {
+        submatrix.push(matrix[i + k].slice(j, j + submatrix_size));
+      }
+      submatrices.push(submatrix);
+    }
+  }
+  return submatrices;
 }
 
-module.exports = { computeHungarian, make_cost_matrix, format_matrix };
+function format_results(matrix, assignments) {
+  let totalCost = 0;
+  const selectedElements = assignments.map(([row, col]) => {
+    const value = matrix[row][col];
+    totalCost += value;
+    return value;
+  });
+  return { selectedElements, totalCost };
+}
+
+function aggregateResults(submatrixSize, submatrixAssignments, originalMatrix) {
+  let selectedElements = [];
+  let totalCost = 0;
+
+  submatrixAssignments.forEach(({ assignments, offsetRow, offsetCol }) => {
+    assignments.forEach(([localRow, localCol]) => {
+      // Перетворюємо локальні координати на глобальні
+      const globalRow = offsetRow + localRow;
+      const globalCol = offsetCol + localCol;
+      const value = originalMatrix[globalRow][globalCol];
+      selectedElements.push(value);
+      totalCost += value;
+    });
+  });
+
+  return { selectedElements, totalCost };
+}
+
+// function main(matrix, is_maximization = false) {
+//   const matrixSize = matrix.length;
+
+//   if (matrixSize <= 20) {
+//     // Пряме використання угорського методу без розбиття
+//     const cost_matrix = make_cost_matrix(matrix, is_maximization);
+//     const assignments = computeHungarian(cost_matrix);
+//     const { selectedElements, totalCost } = format_results(matrix, assignments);
+//     selectedElements.forEach((element, index) => {
+//         console.log(`Agent ${index + 1} -> Cost: ${element}`)
+//     })
+//     console.log("Total cost for small matrix:", totalCost);
+//   } else {
+//     // Розбивка на підматриці
+//     const submatrixSize = 10;
+//     const submatrices = split_into_submatrices(matrix, submatrixSize);
+
+//     let submatrixAssignments = [];
+//     submatrices.forEach((submatrix, index) => {
+//       // Обчислюємо початковий рядок і стовпець підматриці в глобальній матриці
+//       const offsetRow = Math.floor(index / (matrixSize / submatrixSize)) * submatrixSize;
+//       const offsetCol = (index % (matrixSize / submatrixSize)) * submatrixSize;
+
+//       // Виконуємо угорський метод для підматриці
+//       const cost_matrix = make_cost_matrix(submatrix, is_maximization);
+//       const assignments = computeHungarian(cost_matrix);
+
+//       // Зберігаємо призначення та їх зсуви
+//       submatrixAssignments.push({ assignments, offsetRow, offsetCol });
+//     });
+
+//     // Агрегуємо результати з усіх підматриць
+//     const { selectedElements, totalCost } = aggregateResults(submatrixSize, submatrixAssignments, matrix);
+//     selectedElements.forEach((element, index) => {
+//         console.log(`Agent ${index + 1} -> Cost: ${element}`)
+//     })
+//     console.log("Total cost for global assignments:", totalCost);
+//   }
+// }
+
+module.exports = {
+  make_cost_matrix,
+  computeHungarian,
+  format_results
+}

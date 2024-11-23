@@ -1,72 +1,87 @@
 const express = require('express');
 const redis = require('redis');
+const { v4: uuidv4 } = require('uuid');
+
+const PORT = process.env.PORT || 3000;
+const REDIS_URL = process.env.REDIS_URL;
+
+const client = redis.createClient({ url: REDIS_URL });
+client.connect();
 
 const app = express();
-const port = process.env.PORT || 3000;
-
-const redisClient = redis.createClient({ url: process.env.REDIS_URL });
-const redisSubscriber = redis.createClient({ url: process.env.REDIS_URL });
-
-function make_cost_matrix(profit_matrix) {
-  const maximum = Math.max(...profit_matrix.flat());
-  return profit_matrix.map(row => row.map(value => maximum - value));
-}
-
-async function format_matrix(matrix) {
-  let columnWidths = matrix[0].map((_, colIndex) => Math.max(...matrix.map(row => String(row[colIndex]).length)));
-
-  return matrix
-    .map(row => row.map((val, colIndex) => String(val).padStart(columnWidths[colIndex])).join(" "))
-    .join("\n");
-}
-
-function makeCostMatrixForMaximization(matrix) {
-    const maxVal = Math.max(...matrix.flat());
-    return matrix.map(row => row.map(value => maxVal - value));
-}
-
-(async () => {
-  await redisClient.connect();
-  await redisSubscriber.connect();
-  console.log('Main server connected to Redis');
-})();
-
 app.use(express.json());
 
-app.post('/solve-assignment', async (req, res) => {
-  const { matrix, mode } = req.body;
-
-  // Convert matrix to a cost matrix to minimize the total
-  const adjustedMatrix = mode === 'max' ? makeCostMatrixForMaximization(matrix) : matrix;
-  const costMatrix = make_cost_matrix(adjustedMatrix);
-
-  // Store the cost matrix in Redis
-  await redisClient.set('matrix', JSON.stringify(costMatrix));
-  console.log('Cost matrix stored in Redis');
-
-  // Publish the event to start the Hungarian algorithm
-  redisClient.publish('start_assignment', 'Matrix processing started');
-
-  // Listen for the final result
-  redisSubscriber.subscribe('assignment_complete', async () => {
-    const assignments = JSON.parse(await redisClient.get('assignments'));
-    
-    // Calculate the minimum total cost using the original matrix
-    const totalCost = assignments.reduce((sum, [row, col]) => sum + matrix[row][col], 0);
-    
-    // Format matrix for display
-    const formattedMatrix = format_matrix(matrix);
-
-    // Prepare structured response
-    const response = {
-      formattedMatrix,
-      assignments: assignments.map(([row, col]) => `Row ${row} -> Col ${col} (Cost: ${matrix[row][col]})`),
-      totalCost
-    };
-
-    res.json({ result: response });
-    await redisSubscriber.unsubscribe('assignment_complete');
-  });
+app.get('/', (req, res) => {
+  res.send('Main server is running');
 });
 
-app.listen(port, () => console.log(`Main server listening on port ${port}`));
+function split_into_submatrices(matrix, submatrix_size) {
+  const submatrices = [];
+  const n = matrix.length;
+
+  for (let i = 0; i < n; i += submatrix_size) {
+    for (let j = 0; j < n; j += submatrix_size) {
+      const submatrix = [];
+      for (let k = 0; k < submatrix_size; k++) {
+        submatrix.push(matrix[i + k].slice(j, j + submatrix_size));
+      }
+      submatrices.push({ submatrix, offsetRow: i, offsetCol: j });
+    }
+  }
+  return submatrices;
+}
+
+function aggregateResults(submatrixAssignments, originalMatrix) {
+  let selectedElements = [];
+  let totalCost = 0;
+
+  submatrixAssignments.forEach(({ assignments, offsetRow, offsetCol }) => {
+    assignments.forEach(([localRow, localCol]) => {
+      const globalRow = offsetRow + localRow;
+      const globalCol = offsetCol + localCol;
+      const value = originalMatrix[globalRow][globalCol];
+      selectedElements.push(value);
+      totalCost += value;
+    });
+  });
+
+  return { selectedElements, totalCost };
+}
+
+app.post('/task', async (req, res) => {
+  const { matrix, is_maximization } = req.body;
+
+  if (!matrix || typeof is_maximization === 'undefined') {
+    return res.status(400).json({ error: "Invalid request data" });
+  }
+
+  // Унікальний ID для цього запиту, щоб збирати результати
+  const taskId = uuidv4();
+  const submatrices = split_into_submatrices(matrix, 10);
+
+  // Розподіл підзадач серед воркерів
+  for (const { submatrix, offsetRow, offsetCol } of submatrices) {
+    await client.rPush('tasks', JSON.stringify({
+      taskId,
+      submatrix,
+      offsetRow,
+      offsetCol,
+      is_maximization
+    }));
+  }
+
+  // Перевірка завершення обробки підзадач
+  let collectedResults = [];
+  while (collectedResults.length < submatrices.length) {
+    const result = await client.blPop(`results:${taskId}`, 0);
+    collectedResults.push(JSON.parse(result[1]));
+  }
+
+  // Агрегуємо отримані результати
+  const aggregatedResult = aggregateResults(collectedResults, matrix);
+  res.json(aggregatedResult);
+});
+
+app.listen(PORT, () => {
+  console.log(`Main server listening on port ${PORT}`);
+});

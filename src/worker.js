@@ -1,38 +1,35 @@
 const redis = require('redis');
 const { computeHungarian, make_cost_matrix } = require('./hungarian');
 
-const redisClient = redis.createClient({ url: process.env.REDIS_URL });
-const redisSubscriber = redis.createClient({ url: process.env.REDIS_URL });
+const REDIS_URL = process.env.REDIS_URL;
 
-async function startWorker() {
-  await redisClient.connect();
-  await redisSubscriber.connect();
+const client = redis.createClient({ url: REDIS_URL });
+client.connect();
 
-  console.log('Worker connected to Redis');
+console.log("Worker connected to Redis");
 
-  // Subscribe to the relevant event channels
-  redisSubscriber.subscribe('start_assignment', async (message) => {
-    console.log(`Received message on channel start_assignment: ${message}`);
-    const matrix = JSON.parse(await redisClient.get('matrix'));
-    await startAssignment(matrix);
-  });
+async function processTask() {
+  while (true) {
+    const task = await client.blPop('tasks', 0);
+    const { taskId, submatrix, offsetRow, offsetCol, is_maximization } = JSON.parse(task[1]);
+
+    // Обробка підзадачі
+    const costMatrix = make_cost_matrix(submatrix, is_maximization);
+    const assignments = computeHungarian(costMatrix);
+
+    // Форматування результату для повернення
+    const formattedResult = assignments.map(([row, col]) => {
+      const value = submatrix[row][col];
+      return { row, col, value };
+    });
+
+    // Відправка результату назад у Redis
+    await client.rPush(`results:${taskId}`, JSON.stringify({
+      assignments: formattedResult,
+      offsetRow,
+      offsetCol
+    }));
+  }
 }
 
-// Function to handle the full Hungarian algorithm
-async function startAssignment(matrix) {
-  // Step 1: Convert the matrix to a cost matrix
-  const costMatrix = make_cost_matrix(matrix);
-  await redisClient.set('cost_matrix', JSON.stringify(costMatrix));
-  console.log('Cost matrix prepared');
-
-  // Step 2: Run the Hungarian algorithm
-  const assignments = computeHungarian(costMatrix);
-  await redisClient.set('assignments', JSON.stringify(assignments));
-  console.log('Assignments calculated');
-
-  // Step 3: Publish the completion event
-  redisClient.publish('assignment_complete', 'Assignments complete');
-}
-
-// Start the worker and listen for events
-startWorker().catch(console.error);
+processTask().catch(console.error);
