@@ -302,7 +302,7 @@ function main(matrix, is_maximization = false) {
 }
 
 // Приклад тестування:
-const testMatrix = Array.from({ length: 200 }, () => Array.from({ length: 200 }, () => Math.floor(Math.random() * 200)));
+const testMatrix = Array.from({ length: 1000 }, () => Array.from({ length: 1000 }, () => Math.floor(Math.random() * 1000)));
 console.log(testMatrix)
 // console.log("### Мінімізація ###");
 // main(testMatrix, false); // мінімізація
@@ -310,7 +310,9 @@ console.log(testMatrix)
 // console.log("\n### Максимізація ###");
 // main(testMatrix, true); // максимізація
 
-console.log([
+console.log(
+  
+  [
     [
         103,
         116,

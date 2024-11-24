@@ -17,49 +17,61 @@ app.get('/', (req, res) => {
 
 function split_into_submatrices(matrix, submatrix_size) {
   const submatrices = [];
-  const n = matrix.length;
+  const rows = matrix.length;
+  const cols = matrix[0].length;
 
-  for (let i = 0; i < n; i += submatrix_size) {
-    for (let j = 0; j < n; j += submatrix_size) {
+  for (let i = 0; i < rows; i += submatrix_size) {
+    for (let j = 0; j < cols; j += submatrix_size) {
       const submatrix = [];
-      for (let k = 0; k < submatrix_size; k++) {
-        submatrix.push(matrix[i + k].slice(j, j + submatrix_size));
+
+      for (let k = i; k < Math.min(i + submatrix_size, rows); k++) {
+        submatrix.push(matrix[k].slice(j, Math.min(j + submatrix_size, cols)));
       }
+
       submatrices.push({ submatrix, offsetRow: i, offsetCol: j });
     }
   }
+
   return submatrices;
 }
+
+
 
 function aggregateResults(submatrixAssignments, originalMatrix) {
   let selectedElements = [];
   let totalCost = 0;
 
   submatrixAssignments.forEach(({ assignments, offsetRow, offsetCol }) => {
-    assignments.forEach(([localRow, localCol]) => {
-      const globalRow = offsetRow + localRow;
-      const globalCol = offsetCol + localCol;
-      const value = originalMatrix[globalRow][globalCol];
-      selectedElements.push(value);
-      totalCost += value;
+    assignments.forEach(({ row, col, value }) => {
+      const globalRow = offsetRow + row;
+      const globalCol = offsetCol + col;
+
+      // Перевіряємо, чи координати в межах глобальної матриці
+      if (globalRow < originalMatrix.length && globalCol < originalMatrix[0].length) {
+        selectedElements.push(value);
+        totalCost += value;
+      }
     });
   });
 
   return { selectedElements, totalCost };
 }
 
+
+
 app.post('/task', async (req, res) => {
-  const { matrix, is_maximization } = req.body;
-
-  if (!matrix || typeof is_maximization === 'undefined') {
-    return res.status(400).json({ error: "Invalid request data" });
-  }
-
-  // Унікальний ID для цього запиту, щоб збирати результати
+  // const { matrix, is_maximization } = req.body;
+  const { split } = req.body;
+  await client.flushAll();
+    const startTime = Date.now(); // Початок заміру загального часу
+  // if (!matrix || typeof is_maximization === 'undefined') {
+  //   return res.status(400).json({ error: "Invalid request data" });
+  // }
+const matrix = Array.from({ length: 60 }, () => Array.from({ length: 60 }, () => Math.floor(Math.random() * 60 + 10)));
+const is_maximization = false;
   const taskId = uuidv4();
-  const submatrices = split_into_submatrices(matrix, 10);
+  const submatrices = split_into_submatrices(matrix, split);
 
-  // Розподіл підзадач серед воркерів
   for (const { submatrix, offsetRow, offsetCol } of submatrices) {
     await client.rPush('tasks', JSON.stringify({
       taskId,
@@ -70,16 +82,48 @@ app.post('/task', async (req, res) => {
     }));
   }
 
-  // Перевірка завершення обробки підзадач
   let collectedResults = [];
   while (collectedResults.length < submatrices.length) {
     const result = await client.blPop(`results:${taskId}`, 0);
-    collectedResults.push(JSON.parse(result[1]));
+    const parsedResult = JSON.parse(result.element); // Адаптація до нової структури
+    collectedResults.push(parsedResult);
   }
 
-  // Агрегуємо отримані результати
   const aggregatedResult = aggregateResults(collectedResults, matrix);
-  res.json(aggregatedResult);
+  const totalTime = Date.now() - startTime; // Загальний час обробки
+    res.json({
+    ...aggregatedResult,
+    totalProcessingTime: `${totalTime} ms`, // Час обробки всієї задачі
+    detailedProcessingTimes: collectedResults.map((r, i) => ({
+      submatrixIndex: i,
+      processingTime: r.processingTime
+    })) // Час обробки кожної підзадачі
+  });
+});
+
+app.get('/worker-stats', async (req, res) => {
+  try {
+    await client.flushAll();
+
+    const keys = await client.keys('worker_stats:*');
+    const stats = {};
+
+    for (const key of keys) {
+      const workerId = key.split(':')[1];
+      const workerStats = await client.hGetAll(key);
+
+      stats[workerId] = {
+        tasksProcessed: parseInt(workerStats.tasksProcessed || 0, 10),
+        totalProcessingTime: parseFloat(workerStats.totalProcessingTime || 0),
+        averageProcessingTime: parseFloat(workerStats.totalProcessingTime || 0) / (parseInt(workerStats.tasksProcessed || 1, 10))
+      };
+    }
+
+    res.json(stats);
+  } catch (error) {
+    console.error('Error fetching worker stats:', error);
+    res.status(500).json({ error: 'Failed to fetch worker stats' });
+  }
 });
 
 app.listen(PORT, () => {
